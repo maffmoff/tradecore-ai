@@ -1,70 +1,113 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { generateKeyPairSync, verify as cryptoVerify } from "node:crypto";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import {
-  buildStrategyFromRequest,
   createRateLimiter,
   formatErrorReply,
-  formatReply,
-  parseThesisRequest,
+  formatLsReply,
+  parseLsRequest,
   runAgentOnce,
   signRoomMessage,
 } from "../src/bt-agent.mjs";
-import { generateSyntheticCsv, parseOhlcvCsv, runBacktest } from "../src/backtest.mjs";
+import { evaluateCrossSection, selectUsdtPool, spearman } from "../src/ls-eval.mjs";
 import { didFromPrivateKey } from "../src/did.mjs";
 
 const NOW = Date.parse("2026-08-27T12:00:00Z");
+const DAY = 86_400_000;
 
-test("parseThesisRequest ignores non-trigger messages", () => {
-  assert.equal(parseThesisRequest("hello lobby"), null);
-  assert.equal(parseThesisRequest("about bt: nothing"), null);
+test("parseLsRequest ignores non-trigger messages", () => {
+  assert.equal(parseLsRequest("hello lobby"), null);
+  assert.equal(parseLsRequest("thinking about ls: stuff"), null);
 });
 
-test("parseThesisRequest extracts a structured request", () => {
-  const request = parseThesisRequest(
-    "bt: BTCUSDT 4h sma 10/50 from 2024-01-01 to 2026-01-01 liquidity beats momentum in chop",
+test("parseLsRequest extracts factor, lookback, range, thesis", () => {
+  const request = parseLsRequest(
+    "ls: reversal 14d from 2024-06-01 to 2026-06-01 crowded pumps mean-revert",
     { nowMs: NOW },
   );
-  assert.equal(request.symbol, "BTCUSDT");
-  assert.equal(request.interval, "4h");
-  assert.equal(request.fast, 10);
-  assert.equal(request.slow, 50);
-  assert.equal(request.start, "2024-01-01T00:00:00Z");
-  assert.equal(request.end, "2026-01-01T00:00:00Z");
-  assert.match(request.thesis, /liquidity beats momentum/);
+  assert.equal(request.factor, "reversal");
+  assert.equal(request.lookback, 14);
+  assert.equal(request.start, "2024-06-01T00:00:00Z");
+  assert.equal(request.end, "2026-06-01T00:00:00Z");
+  assert.match(request.thesis, /mean-revert/);
 });
 
-test("parseThesisRequest applies defaults and USDT suffix", () => {
-  const request = parseThesisRequest("!bt ETH mean reversion after dumps", { nowMs: NOW });
-  assert.equal(request.symbol, "ETHUSDT");
-  assert.equal(request.interval, "1h");
-  assert.equal(request.fast, 20);
-  assert.equal(request.slow, 100);
+test("parseLsRequest applies defaults and rejects bad input", () => {
+  const request = parseLsRequest("!ls momentum liquidity leads price", { nowMs: NOW });
+  assert.equal(request.factor, "momentum");
+  assert.equal(request.lookback, 30);
   assert.equal(request.end, "2026-08-27T00:00:00Z");
+  assert.equal(parseLsRequest("ls: 30d no factor here", { nowMs: NOW }).error, "missing_factor");
+  assert.equal(parseLsRequest("ls: momentum 400d x", { nowMs: NOW }).error, "bad_lookback");
+  assert.equal(parseLsRequest("ls: momentum 30d from 2026-06-01 to 2026-07-01 x", { nowMs: NOW }).error, "range_too_small");
 });
 
-test("parseThesisRequest rejects oversized ranges and missing symbols", () => {
-  assert.equal(parseThesisRequest("bt: BTCUSDT 1m from 2023-01-01 to 2026-01-01 x", { nowMs: NOW }).error, "range_too_large");
-  assert.equal(parseThesisRequest("bt: 20/100 momentum", { nowMs: NOW }).error, "missing_symbol");
-  assert.equal(parseThesisRequest("bt: BTCUSDT sma 100/20 x", { nowMs: NOW }).error, "bad_sma");
+function syntheticSeries({ symbols = 40, days = 320 } = {}) {
+  const start = Date.parse("2025-01-01T00:00:00Z");
+  const series = new Map();
+  let state = 0xc0ffee;
+  const random = () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 0x100000000;
+  };
+  for (let index = 0; index < symbols; index += 1) {
+    const drift = ((index / (symbols - 1)) - 0.5) * 0.004;
+    const rows = [];
+    let close = 100 * (1 + index);
+    for (let day = 0; day < days; day += 1) {
+      close *= 1 + drift + ((random() - 0.5) * 0.01);
+      rows.push({ openTime: start + (day * DAY), close, volume: 1000 + (random() * 100) });
+    }
+    series.set(`SYM${String(index).padStart(2, "0")}USDT`, rows);
+  }
+  return { series, start, end: start + (days * DAY) };
+}
+
+test("evaluateCrossSection finds persistent drift with momentum and flips with reversal", () => {
+  const { series, start, end } = syntheticSeries();
+  const shared = { lookback: 20, start: new Date(start).toISOString(), end: new Date(end).toISOString() };
+  const momentum = evaluateCrossSection(series, { ...shared, factor: "momentum" });
+  const reversal = evaluateCrossSection(series, { ...shared, factor: "reversal" });
+  assert.ok(momentum.days >= 60);
+  assert.ok(momentum.ic.pooledMean > 0.05, `expected positive momentum IC, got ${momentum.ic.pooledMean}`);
+  assert.ok(reversal.ic.pooledMean < -0.05, `expected negative reversal IC, got ${reversal.ic.pooledMean}`);
+  assert.ok(Math.abs(momentum.ic.pooledMean + reversal.ic.pooledMean) < 1e-9);
+  assert.ok(momentum.spread.annualizedPct > 0);
 });
 
-test("buildStrategyFromRequest produces a valid strategy", () => {
-  const request = parseThesisRequest("bt: SOLUSDT 1d sma 5/30 from 2023-01-01 to 2026-01-01 trend", { nowMs: NOW });
-  const strategy = buildStrategyFromRequest(request);
-  assert.equal(strategy.id, "chat-solusdt-1d-5-30");
-  assert.equal(strategy.rules.fast, 5);
-  assert.equal(strategy.market.venue, "binance-spot");
+test("spearman handles ties and monotone data", () => {
+  assert.equal(spearman([1, 2, 3, 4], [10, 20, 30, 40]), 1);
+  assert.equal(spearman([1, 2, 3, 4], [40, 30, 20, 10]), -1);
+  assert.equal(spearman([1, 1, 1], [5, 6, 7]), 0);
 });
 
-test("formatReply is a single line under the message cap", () => {
-  const bars = parseOhlcvCsv(generateSyntheticCsv({ bars: 1200 }));
-  const request = parseThesisRequest("bt: BTCUSDT 1h sma 20/100 synthetic", { nowMs: NOW });
-  const report = runBacktest(buildStrategyFromRequest(request), bars, { dataHash: "f".repeat(64), dataLabel: "synthetic" });
-  const reply = formatReply(report, { requestSeq: 42 });
+test("selectUsdtPool filters stables, leveraged tokens, and sorts by volume", () => {
+  const pool = selectUsdtPool([
+    { symbol: "BTCUSDT", quoteVolume: "900" },
+    { symbol: "ETHUSDT", quoteVolume: "800" },
+    { symbol: "USDCUSDT", quoteVolume: "9999" },
+    { symbol: "BTCUPUSDT", quoteVolume: "700" },
+    { symbol: "ETHBTC", quoteVolume: "600" },
+    { symbol: "SOLUSDT", quoteVolume: "1000" },
+  ]);
+  assert.deepEqual(pool, ["SOLUSDT", "BTCUSDT", "ETHUSDT"]);
+});
+
+test("formatLsReply is a single line with round vocabulary", () => {
+  const { series, start, end } = syntheticSeries();
+  const result = evaluateCrossSection(series, {
+    factor: "momentum",
+    lookback: 20,
+    start: new Date(start).toISOString(),
+    end: new Date(end).toISOString(),
+  });
+  const reply = formatLsReply(result, { requestSeq: 42, dataHash: "a".repeat(64), reportHash: "b".repeat(64) });
   assert.ok(reply.length <= 4096);
   assert.ok(!/[\r\n]/.test(reply));
-  assert.match(reply, /^tradecore-bt-v1 (PASS|REVIEW) \| BTCUSDT 1h sma 20\/100 \| OOS net /);
+  assert.match(reply, /^tradecore-ls-v1 momentum 20d \| universe PIT top50/);
+  assert.match(reply, /ICSharpe/);
   assert.match(reply, /re:42$/);
   assert.match(reply, /paper research only/);
 });
@@ -72,37 +115,36 @@ test("formatReply is a single line under the message cap", () => {
 test("formatErrorReply names the reason and echoes usage", () => {
   const reply = formatErrorReply({ code: "rate_limited" }, 7);
   assert.match(reply, /rate limit reached/);
-  assert.match(reply, /usage: bt:/);
+  assert.match(reply, /usage: ls:/);
 });
 
 test("signRoomMessage signs room|nonce|text and verifies against the DID", () => {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
-  const payload = signRoomMessage(privateKey, "tradecore-bt", "hello  world", 123);
+  const payload = signRoomMessage(privateKey, "tradecore-lab", "hello  world", 123);
   assert.equal(payload.text, "hello world");
   assert.equal(payload.did, didFromPrivateKey(privateKey));
-  const canonical = Buffer.from(`tradecore-bt|123|hello world`, "utf8");
+  const canonical = Buffer.from(`tradecore-lab|123|hello world`, "utf8");
   assert.ok(cryptoVerify(null, canonical, publicKey, Buffer.from(payload.sig, "base64url")));
 });
 
 test("rate limiter enforces per-author and daily windows", () => {
   const state = {};
   const limiter = createRateLimiter(state);
-  const base = NOW;
-  assert.ok(limiter.allow("~alice", base));
-  assert.ok(limiter.allow("~alice", base + 1));
-  assert.ok(limiter.allow("~alice", base + 2));
-  assert.equal(limiter.allow("~alice", base + 3), false);
-  assert.ok(limiter.allow("~bob", base + 4));
-  assert.ok(limiter.allow("~alice", base + 86_400_001));
+  assert.ok(limiter.allow("~alice", NOW));
+  assert.ok(limiter.allow("~alice", NOW + 1));
+  assert.ok(limiter.allow("~alice", NOW + 2));
+  assert.equal(limiter.allow("~alice", NOW + 3), false);
+  assert.ok(limiter.allow("~bob", NOW + 4));
+  assert.ok(limiter.allow("~alice", NOW + DAY + 5));
 });
 
-test("runAgentOnce replies to a trigger with a signed post", async (t) => {
+test("runAgentOnce replies to an invalid trigger with a signed error", async () => {
   const { privateKey } = generateKeyPairSync("ed25519");
   const identity = { privateKey, did: didFromPrivateKey(privateKey) };
   const roomPage = {
-    room: "tradecore-bt",
+    room: "tradecore-lab",
     messages: [
-      { seq: 11, ts: "2026-08-27T00:00:00Z", from: "~tester", text: "bt: 20/100 momentum" },
+      { seq: 11, ts: "2026-08-27T00:00:00Z", from: "~tester", text: "ls: 30d thesis without factor" },
       { seq: 12, ts: "2026-08-27T00:00:01Z", from: "~noise", text: "unrelated chatter" },
     ],
   };
@@ -114,14 +156,11 @@ test("runAgentOnce replies to a trigger with a signed post", async (t) => {
     }
     return new Response(JSON.stringify(roomPage), { status: 200 });
   };
-  const statePath = `${t.name.replace(/\W+/g, "-")}-state.json`;
-  const { mkdtemp } = await import("node:fs/promises");
-  const { tmpdir } = await import("node:os");
-  const dir = await mkdtemp(`${tmpdir()}/bt-agent-test-`);
+  const dir = await mkdtemp(`${tmpdir()}/ls-agent-test-`);
   const result = await runAgentOnce({
-    room: "tradecore-bt",
+    room: "tradecore-lab",
     identity,
-    statePath: `${dir}/${statePath}`,
+    statePath: `${dir}/state.json`,
     artifactsDir: null,
     fetchImpl,
   });
@@ -129,5 +168,5 @@ test("runAgentOnce replies to a trigger with a signed post", async (t) => {
   assert.equal(result.lastSeq, 12);
   assert.equal(posts.length, 1);
   assert.equal(posts[0].did, identity.did);
-  assert.match(posts[0].text, /error re:11 no symbol found/);
+  assert.match(posts[0].text, /error re:11 factor must be/);
 });

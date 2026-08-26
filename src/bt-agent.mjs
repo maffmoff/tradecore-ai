@@ -1,27 +1,18 @@
 import { sign as cryptoSign } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { hashJson, readJson, writeJson } from "./core.mjs";
-import { parseOhlcvCsv, runBacktest, validateStrategy } from "./backtest.mjs";
-import { fetchBinanceKlines } from "./market-data.mjs";
 import { didFromPrivateKey } from "./did.mjs";
+import { evaluateCrossSection, fetchDailySeries, fetchUsdtPool } from "./ls-eval.mjs";
 
 const BASE_URL = "https://technocore.chat";
-const TRIGGER = /^\s*(?:!bt|bt:|@tradecore)\s+/i;
-const INTERVALS = new Set(["1m", "5m", "15m", "1h", "4h", "1d"]);
-const INTERVAL_MS = new Map([
-  ["1m", 60_000],
-  ["5m", 300_000],
-  ["15m", 900_000],
-  ["1h", 3_600_000],
-  ["4h", 14_400_000],
-  ["1d", 86_400_000],
-]);
-const MAX_BARS = 60_000;
+const TRIGGER = /^\s*(?:!ls|ls:|@tradecore)\s+/i;
+const FACTORS = new Set(["momentum", "reversal", "vol", "volume"]);
 const PER_AUTHOR_PER_DAY = 3;
 const GLOBAL_PER_DAY = 40;
 const DAY_MS = 86_400_000;
+const CACHE_TTL_MS = DAY_MS;
 const DISCLAIMER = "paper research only, not financial advice";
 
 function cleanSingleLine(value, limit = 4096) {
@@ -35,7 +26,7 @@ function utcDateOnly(ms) {
   return new Date(Math.floor(ms / DAY_MS) * DAY_MS).toISOString().slice(0, 10);
 }
 
-export function parseThesisRequest(text, { nowMs = Date.now() } = {}) {
+export function parseLsRequest(text, { nowMs = Date.now() } = {}) {
   const raw = String(text ?? "");
   if (!TRIGGER.test(raw)) return null;
   let rest = raw.replace(TRIGGER, " ");
@@ -46,74 +37,46 @@ export function parseThesisRequest(text, { nowMs = Date.now() } = {}) {
     return match;
   };
 
-  const from = take(/\bfrom[ =](\d{4}-\d{2}-\d{2})\b/i)?.[1] ?? "2023-01-01";
+  const from = take(/\bfrom[ =](\d{4}-\d{2}-\d{2})\b/i)?.[1] ?? "2024-01-01";
   const to = take(/\bto[ =](\d{4}-\d{2}-\d{2})\b/i)?.[1] ?? utcDateOnly(nowMs);
-  const smaPair = take(/\b(?:sma[ =]?)?(\d{1,4})\s*\/\s*(\d{1,5})\b/);
-  const fast = smaPair ? Number(smaPair[1]) : 20;
-  const slow = smaPair ? Number(smaPair[2]) : 100;
-  const intervalMatch = take(/\b(1m|5m|15m|1h|4h|1d)\b/i);
-  const interval = (intervalMatch?.[1] ?? "1h").toLowerCase();
-
-  let symbol = null;
-  const symbolMatch = rest.match(/\b([A-Z]{2,12}(?:USDT|USDC|BTC|ETH|BNB))\b/i)
-    ?? rest.match(/\b([A-Z]{3,10})\b/);
-  if (symbolMatch) {
-    symbol = symbolMatch[1].toUpperCase();
-    rest = rest.replace(symbolMatch[0], " ");
-    const isQuotedPair = /(USDT|USDC)$/.test(symbol) || (/(BTC|ETH|BNB)$/.test(symbol) && symbol.length >= 6);
-    if (!isQuotedPair) symbol = `${symbol}USDT`;
-  }
-
+  const factorMatch = take(/\b(momentum|reversal|vol|volume)\b/i);
+  const lookbackMatch = take(/\b(\d{1,3})\s*d\b/i);
+  const factor = factorMatch?.[1]?.toLowerCase() ?? null;
+  const lookback = lookbackMatch ? Number(lookbackMatch[1]) : 30;
   const thesis = rest.replace(/\s+/g, " ").trim().slice(0, 900);
-  if (!symbol) return { error: "missing_symbol" };
-  if (!INTERVALS.has(interval)) return { error: "bad_interval" };
-  if (!(fast >= 2 && slow > fast && slow <= 10_000)) return { error: "bad_sma" };
+
+  if (!factor || !FACTORS.has(factor)) return { error: "missing_factor" };
+  if (!(lookback >= 2 && lookback <= 365)) return { error: "bad_lookback" };
   const startMs = Date.parse(`${from}T00:00:00Z`);
   const endMs = Date.parse(`${to}T00:00:00Z`);
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return { error: "bad_range" };
-  const bars = Math.floor((endMs - startMs) / INTERVAL_MS.get(interval));
-  if (bars > MAX_BARS) return { error: "range_too_large", bars, maxBars: MAX_BARS };
-  if (bars < slow + 103) return { error: "range_too_small", bars };
+  const warmupDays = Math.max(lookback * 2, 30) + 5;
+  const evalDays = Math.floor((endMs - startMs) / DAY_MS);
+  if (evalDays < 90) return { error: "range_too_small" };
 
   return {
-    symbol,
-    interval,
-    fast,
-    slow,
+    factor,
+    lookback,
     start: `${from}T00:00:00Z`,
     end: `${to}T00:00:00Z`,
+    fetchStart: new Date(startMs - (warmupDays * DAY_MS)).toISOString(),
     thesis: thesis || "(no thesis text provided)",
   };
 }
 
-export function buildStrategyFromRequest(request) {
-  const id = `chat-${request.symbol.toLowerCase()}-${request.interval}-${request.fast}-${request.slow}`.slice(0, 48);
-  return validateStrategy({
-    schema: "tradecore-strategy-v1",
-    id,
-    name: `Chat request: ${request.symbol} ${request.interval} SMA ${request.fast}/${request.slow}`,
-    hypothesis: request.thesis,
-    market: { venue: "binance-spot", symbol: request.symbol, interval: request.interval },
-    rules: { type: "sma-cross", fast: request.fast, slow: request.slow, position: "long_only" },
-    costs: { feeBps: 10, slippageBps: 10 },
-    evaluation: { holdoutFraction: 0.3, minHoldoutBars: 100, maxDrawdownPct: 50 },
-  });
-}
+const fixed = (value, digits = 3) => (value === null || value === undefined ? "n/a" : value.toFixed(digits));
 
-const pct = (value) => (value === null || value === undefined ? "n/a" : `${value.toFixed(1)}%`);
-
-export function formatReply(report, { requestSeq }) {
-  const oos = report.metrics.outOfSample;
-  const inSample = report.metrics.inSample;
-  const bench = report.metrics.benchmark.outOfSample;
-  const gate = report.gate.passedMechanicalGates ? "PASS" : "REVIEW";
+export function formatLsReply(result, { requestSeq, dataHash, reportHash }) {
+  const horizons = result.ic.perHorizonMean;
   const line = [
-    `tradecore-bt-v1 ${gate}`,
-    `${report.strategy.market.symbol} ${report.strategy.market.interval} sma ${report.strategy.rules.fast}/${report.strategy.rules.slow}`,
-    `OOS net ${pct(oos.netReturnPct)} sharpe ${oos.sharpe ?? "n/a"} maxDD ${pct(oos.maxDrawdownPct)} (B&H ${pct(bench.netReturnPct)})`,
-    `IS net ${pct(inSample.netReturnPct)}`,
-    `bars ${report.data.bars} holdout ${report.split.holdoutBars}`,
-    `strat:${report.strategyHash.slice(0, 10)} data:${String(report.data.sha256).slice(0, 10)} report:${hashJson(report).slice(0, 10)}`,
+    `tradecore-ls-v1 ${result.factor} ${result.lookback}d`,
+    `universe PIT top${result.universe.target} (mean ${result.universe.meanObserved})`,
+    `days ${result.days} (${result.firstDay}..${result.lastDay})`,
+    `IC h1 ${fixed(horizons.h1)} h2 ${fixed(horizons.h2)} h3 ${fixed(horizons.h3)} h4 ${fixed(horizons.h4)}`,
+    `pooled IC ${fixed(result.ic.pooledMean)} ICSharpe ${fixed(result.ic.icSharpe, 2)}`,
+    `L/S q5 spread ${fixed(result.spread.annualizedPct, 1)}%/y sharpe ${fixed(result.spread.sharpe, 2)} (gross)`,
+    `data:${String(dataHash).slice(0, 10)} report:${String(reportHash).slice(0, 10)}`,
+    "survivorship: pool as of request",
     DISCLAIMER,
     `re:${requestSeq}`,
   ].join(" | ");
@@ -122,19 +85,17 @@ export function formatReply(report, { requestSeq }) {
 
 export function formatErrorReply(error, requestSeq) {
   const reasons = {
-    missing_symbol: "no symbol found",
-    bad_interval: "interval must be 1m/5m/15m/1h/4h/1d",
-    bad_sma: "sma must be fast/slow with fast<slow",
+    missing_factor: "factor must be momentum, reversal, vol, or volume",
+    bad_lookback: "lookback must be 2d..365d",
     bad_range: "dates must be from<to (YYYY-MM-DD)",
-    range_too_large: `too many bars for this interval (max ${MAX_BARS})`,
-    range_too_small: "range too short for the requested slow SMA",
-    rate_limited: "rate limit reached (3 requests per DID/nick per day)",
-    engine_error: "backtest failed",
+    range_too_small: "need at least 90 days between from and to",
+    rate_limited: `rate limit reached (${PER_AUTHOR_PER_DAY} requests per DID/nick per day)`,
+    engine_error: "evaluation failed",
   };
   const reason = reasons[error.code] ?? error.code;
   const detail = error.detail ? ` (${cleanSingleLine(error.detail, 120)})` : "";
   return cleanSingleLine(
-    `tradecore-bt-v1 error re:${requestSeq} ${reason}${detail} | usage: bt: SYMBOL [1h] [sma 20/100] [from 2023-01-01] [to 2026-01-01] your thesis | ${DISCLAIMER}`,
+    `tradecore-ls-v1 error re:${requestSeq} ${reason}${detail} | usage: ls: momentum|reversal|vol|volume 30d [from 2024-01-01] [to 2026-08-01] your thesis | ${DISCLAIMER}`,
   );
 }
 
@@ -190,40 +151,68 @@ export function createRateLimiter(state) {
   };
 }
 
-export async function executeRequest(request, { fetchImpl = fetch, artifactsDir } = {}) {
-  const market = await fetchBinanceKlines({
-    symbol: request.symbol,
-    interval: request.interval,
+async function loadSeriesCache(cacheDir, pool) {
+  const cache = new Map();
+  if (!cacheDir || !existsSync(cacheDir)) return cache;
+  const wanted = new Set(pool);
+  for (const file of await readdir(cacheDir)) {
+    if (!file.endsWith(".json")) continue;
+    const symbol = file.slice(0, -5);
+    if (!wanted.has(symbol)) continue;
+    try {
+      const entry = JSON.parse(await readFile(resolve(cacheDir, file), "utf8"));
+      if (Date.now() - Date.parse(entry.fetchedAt) < CACHE_TTL_MS) {
+        cache.set(symbol, { rows: entry.rows, sha256: entry.sha256 });
+      }
+    } catch {
+      // Corrupt cache entries are refetched.
+    }
+  }
+  return cache;
+}
+
+async function persistSeriesCache(cacheDir, cache) {
+  if (!cacheDir) return;
+  await mkdir(cacheDir, { recursive: true });
+  const fetchedAt = new Date().toISOString();
+  for (const [symbol, entry] of cache) {
+    await writeJson(resolve(cacheDir, `${symbol}.json`), { fetchedAt, sha256: entry.sha256, rows: entry.rows });
+  }
+}
+
+export async function executeLsRequest(request, { fetchImpl = fetch, artifactsDir, cacheDir } = {}) {
+  const pool = await fetchUsdtPool(fetchImpl);
+  const cache = await loadSeriesCache(cacheDir, pool);
+  const preloaded = cache.size;
+  const { series, dataHash } = await fetchDailySeries(pool, {
+    start: request.fetchStart,
+    end: request.end,
+    fetchImpl,
+    cache,
+  });
+  if (cache.size > preloaded) await persistSeriesCache(cacheDir, cache);
+  const result = evaluateCrossSection(series, {
+    factor: request.factor,
+    lookback: request.lookback,
     start: request.start,
     end: request.end,
-    maxBars: MAX_BARS,
-  }, fetchImpl);
-  const bars = parseOhlcvCsv(market.csv);
-  const strategy = buildStrategyFromRequest(request);
-  const strategyHash = hashJson(strategy);
-  const proposal = {
-    schema: "tradecore-proposal-v1",
-    createdAt: new Date().toISOString(),
-    strategy,
-    strategyHash,
-    lock: {
-      rule: "The strategy and evaluation settings above must not change after results are observed.",
-      nextStep: "This chat-triggered run is historical research; forward evidence still requires a sealed forward test.",
-    },
-  };
-  const report = runBacktest(strategy, bars, {
-    dataHash: market.provenance.csvSha256,
-    dataLabel: `binance-spot:${request.symbol}:${request.interval}`,
   });
-  report.data.provenance = market.provenance;
-  const artifact = { schema: "tradecore-bt-agent-run-v1", request, proposal, report };
+  const artifact = {
+    schema: "tradecore-ls-agent-run-v1",
+    createdAt: new Date().toISOString(),
+    request,
+    pool: { size: pool.length, symbols: pool },
+    dataHash,
+    result,
+  };
+  const reportHash = hashJson(artifact);
   let outputPath = null;
   if (artifactsDir) {
     await mkdir(artifactsDir, { recursive: true });
-    outputPath = resolve(artifactsDir, `run-${Date.now()}-${hashJson(report).slice(0, 10)}.json`);
+    outputPath = resolve(artifactsDir, `ls-${Date.now()}-${reportHash.slice(0, 10)}.json`);
     await writeJson(outputPath, artifact);
   }
-  return { report, proposal, outputPath };
+  return { result, dataHash, reportHash, outputPath };
 }
 
 export async function loadState(path) {
@@ -237,6 +226,7 @@ export async function runAgentOnce(options) {
     identity,
     statePath,
     artifactsDir,
+    cacheDir,
     fetchImpl = fetch,
     wait = 0,
     log = () => {},
@@ -250,17 +240,17 @@ export async function runAgentOnce(options) {
     state.lastSeq = message.seq;
     if (message.from === identity.did) continue;
     if (!TRIGGER.test(message.text ?? "")) continue;
-    const request = parseThesisRequest(message.text);
+    const request = parseLsRequest(message.text);
     let reply;
     if (request?.error) {
       reply = formatErrorReply({ code: request.error }, message.seq);
     } else if (!limiter.allow(message.from)) {
       reply = formatErrorReply({ code: "rate_limited" }, message.seq);
     } else {
-      log(`Running backtest for seq ${message.seq}: ${request.symbol} ${request.interval} ${request.fast}/${request.slow}`);
+      log(`Running LS eval for seq ${message.seq}: ${request.factor} ${request.lookback}d ${request.start.slice(0, 10)}..${request.end.slice(0, 10)}`);
       try {
-        const run = await executeRequest(request, { fetchImpl, artifactsDir });
-        reply = formatReply(run.report, { requestSeq: message.seq });
+        const run = await executeLsRequest(request, { fetchImpl, artifactsDir, cacheDir });
+        reply = formatLsReply(run.result, { requestSeq: message.seq, dataHash: run.dataHash, reportHash: run.reportHash });
         log(`Saved artifact: ${run.outputPath}`);
       } catch (error) {
         reply = formatErrorReply({ code: "engine_error", detail: error.message }, message.seq);
@@ -276,12 +266,12 @@ export async function runAgentOnce(options) {
 
 export async function watchAgent(options) {
   const log = options.log ?? ((line) => process.stderr.write(`${line}\n`));
-  log(`bt-agent watching /r/${options.room} as ${options.identity.did}`);
+  log(`ls-agent watching /r/${options.room} as ${options.identity.did}`);
   for (;;) {
     try {
       await runAgentOnce({ ...options, wait: 10, log });
     } catch (error) {
-      log(`bt-agent error: ${error.message}; retrying in 15s`);
+      log(`ls-agent error: ${error.message}; retrying in 15s`);
       await new Promise((resolvePause) => { setTimeout(resolvePause, 15_000); });
     }
   }
