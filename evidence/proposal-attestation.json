@@ -1,0 +1,14 @@
+{
+  "schema": "tradecore-attestation-v1",
+  "createdAt": "2026-08-26T11:29:16.004Z",
+  "did": "did:key:z6MkmDGEdnYdV8u6SF3pkLxyL1fnu2bKNn1KexNSpaJCRKn2",
+  "artifact": {
+    "schema": "tradecore-proposal-v1",
+    "sha256": "60f9fc57cbcf3ac1acee07377965fbc2622eb29ce326854ba69b772efaed7c8e"
+  },
+  "role": "proposer",
+  "verdict": "proposed",
+  "statement": "Strategy hash was locked in git before the real-data download; this publication signature was created after the disclosed failed test.",
+  "canonical": "tradecore-attestation-v1|60f9fc57cbcf3ac1acee07377965fbc2622eb29ce326854ba69b772efaed7c8e|proposer|proposed|Strategy hash was locked in git before the real-data download; this publication signature was created after the disclosed failed test.",
+  "signature": "ixd4x4i_98ECv4dpIKSCwCNzZinoSn6lwXyUT0RMaGntsKfbD4JXnkfOyYyie6j1gWVzTFFUnUaGidqQpMQDCw"
+}

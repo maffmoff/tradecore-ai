@@ -36,6 +36,8 @@ test("parses deterministic OHLCV and produces repeatable metrics", () => {
   assert.deepEqual(first.metrics, second.metrics);
   assert.equal(first.strategyHash, second.strategyHash);
   assert.equal(first.metrics.outOfSample.bars, 233);
+  assert.equal(first.metrics.benchmark.outOfSample.bars, 233);
+  assert.equal(first.metrics.benchmark.outOfSample.transactions, 2);
   assert.equal(typeof first.gate.passedMechanicalGates, "boolean");
   assert.match(first.engine.timing, /next bar open/);
 });

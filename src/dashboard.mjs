@@ -18,12 +18,17 @@ export function renderDashboard(reports) {
   const ordered = [...reports].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   const rows = ordered.map((report) => {
     const metrics = report.metrics.outOfSample;
+    const benchmark = report.metrics.benchmark?.outOfSample;
+    const versusBenchmark = benchmark?.netReturnPct === null || benchmark?.netReturnPct === undefined
+      ? null
+      : metrics.netReturnPct - benchmark.netReturnPct;
     const status = report.gate.passedMechanicalGates ? "PASS" : "REVIEW";
     return `<tr>
       <td><span class="status ${status.toLowerCase()}">${status}</span></td>
       <td><strong>${escapeHtml(report.strategy.name)}</strong><small>${escapeHtml(report.strategy.id)}</small></td>
       <td>${escapeHtml(report.strategy.market.symbol)} · ${escapeHtml(report.strategy.market.interval)}</td>
       <td>${metric(metrics.netReturnPct, "%")}</td>
+      <td>${metric(versusBenchmark, " pp")}</td>
       <td>${metric(metrics.sharpe)}</td>
       <td>${metric(metrics.maxDrawdownPct, "%")}</td>
       <td>${metrics.bars}</td>
@@ -43,7 +48,7 @@ export function renderDashboard(reports) {
 </head>
 <body><main class="wrap">
   <header><div><h1>Trade<span>Core</span></h1><p>AIが戦略を主張する場所ではなく、別DIDが再現・反証するための公開研究台帳。表示値は将来の利益を保証しません。</p></div><div class="stats"><div class="card"><strong>${ordered.length}</strong><small>reports</small></div><div class="card"><strong>${passing}</strong><small>mechanical pass</small></div></div></header>
-  <section class="table"><table><thead><tr><th>Gate</th><th>Strategy</th><th>Market</th><th>OOS Return</th><th>Sharpe</th><th>Max DD</th><th>Bars</th><th>Data hash</th></tr></thead><tbody>${rows || '<tr><td colspan="8">No reports yet.</td></tr>'}</tbody></table></section>
+  <section class="table"><table><thead><tr><th>Gate</th><th>Strategy</th><th>Market</th><th>OOS Return</th><th>vs B&amp;H</th><th>Sharpe</th><th>Max DD</th><th>Bars</th><th>Data hash</th></tr></thead><tbody>${rows || '<tr><td colspan="9">No reports yet.</td></tr>'}</tbody></table></section>
   <footer>Paper research only · No live execution · Every accepted result still needs independent DID reproduction and forward testing.</footer>
 </main></body></html>`;
 }

@@ -1,0 +1,35 @@
+{
+  "schema": "tradecore-forward-plan-v1",
+  "createdAt": "2026-08-26T11:28:37Z",
+  "strategyId": "btc-sma-cross-v1",
+  "strategyHash": "f43be632329b4faddbf3241531a16d077d7cf82f78590be55a6340b90878f547",
+  "market": {
+    "source": "Binance public spot market-data API",
+    "symbol": "BTCUSDT",
+    "interval": "1h"
+  },
+  "window": {
+    "startInclusive": "2026-08-27T00:00:00.000Z",
+    "endExclusive": "2026-11-25T00:00:00.000Z",
+    "days": 90
+  },
+  "lockedRules": {
+    "type": "sma-cross",
+    "fast": 24,
+    "slow": 96,
+    "position": "long_only",
+    "feeBps": 10,
+    "slippageBps": 5
+  },
+  "acceptance": {
+    "netReturnMustBePositive": true,
+    "maxDrawdownPct": 25,
+    "independentDidReproductionRequired": true
+  },
+  "integrity": {
+    "noBackfillBeforeEnd": true,
+    "failedOutcomeWillBePublished": true,
+    "liveOrders": false
+  },
+  "warning": "This is a paper-trading research plan, not an investment recommendation or promise of profit."
+}

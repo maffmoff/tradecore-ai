@@ -1,0 +1,183 @@
+{
+  "schema": "tradecore-backtest-v1",
+  "createdAt": "2026-08-26T11:28:28.946Z",
+  "engine": {
+    "name": "tradecore",
+    "version": "0.2.0",
+    "timing": "Signal uses bar close; position changes at the next bar open. Final position is liquidated at the last open."
+  },
+  "strategy": {
+    "schema": "tradecore-strategy-v1",
+    "id": "btc-sma-cross-v1",
+    "name": "BTC SMA Cross — Paper Research",
+    "hypothesis": "A long-only 24/96-hour moving-average crossover may reduce exposure during sustained downtrends after realistic transaction costs.",
+    "market": {
+      "venue": "binance-spot-reference",
+      "symbol": "BTCUSDT",
+      "interval": "1h"
+    },
+    "rules": {
+      "type": "sma-cross",
+      "fast": 24,
+      "slow": 96,
+      "position": "long_only"
+    },
+    "costs": {
+      "feeBps": 10,
+      "slippageBps": 5
+    },
+    "evaluation": {
+      "holdoutFraction": 0.3,
+      "minHoldoutBars": 720,
+      "maxDrawdownPct": 25
+    }
+  },
+  "strategyHash": "f43be632329b4faddbf3241531a16d077d7cf82f78590be55a6340b90878f547",
+  "data": {
+    "label": "btcusdt-1h-2023-2025.csv",
+    "sha256": "6a49ec19499f43ac85d4b56f2292398532c123ca7d898f6293d1bd6f9d2d8dcb",
+    "bars": 26303,
+    "start": "2023-01-01T00:00:00.000Z",
+    "end": "2025-12-31T23:00:00.000Z",
+    "provenance": {
+      "schema": "tradecore-market-data-v1",
+      "source": "Binance public spot market-data API",
+      "endpoint": "https://data-api.binance.vision/api/v3/klines",
+      "documentation": "https://developers.binance.com/en/docs/products/spot/rest-api",
+      "symbol": "BTCUSDT",
+      "interval": "1h",
+      "requested": {
+        "startInclusive": "2023-01-01T00:00:00.000Z",
+        "endExclusive": "2026-01-01T00:00:00.000Z"
+      },
+      "received": {
+        "bars": 26303,
+        "start": "2023-01-01T00:00:00.000Z",
+        "end": "2025-12-31T23:00:00.000Z",
+        "requests": 27,
+        "unexpectedIntervalGaps": 1,
+        "firstGaps": [
+          {
+            "after": "2023-03-24T12:00:00.000Z",
+            "milliseconds": 7200000
+          }
+        ]
+      },
+      "csvSha256": "6a49ec19499f43ac85d4b56f2292398532c123ca7d898f6293d1bd6f9d2d8dcb",
+      "fetchedAt": "2026-08-26T11:27:05.085Z",
+      "warning": "Public market data may be corrected by its provider. Preserve this CSV hash with every report."
+    },
+    "quality": {
+      "status": "review",
+      "unexpectedIntervalGaps": 1,
+      "note": "The provider dataset contains interval gaps; review the disclosed timestamps before accepting the result."
+    }
+  },
+  "split": {
+    "method": "locked chronological holdout",
+    "holdoutFractionRequested": 0.3,
+    "holdoutBars": 7863,
+    "outOfSampleStart": "2025-02-07T09:00:00.000Z"
+  },
+  "assumptions": {
+    "position": "long or cash; no leverage and no short selling",
+    "feeBpsPerPositionChange": 10,
+    "slippageBpsPerPositionChange": 5,
+    "dividendsFundingBorrowTaxes": "not modeled"
+  },
+  "metrics": {
+    "inSample": {
+      "bars": 18344,
+      "start": "2023-01-05T00:00:00.000Z",
+      "end": "2025-02-07T08:00:00.000Z",
+      "netReturnPct": 169.121543,
+      "annualizedReturnPct": 60.441878,
+      "annualizedVolatilityPct": 35.871244,
+      "sharpe": 1.497141,
+      "maxDrawdownPct": 34.819135,
+      "exposurePct": 54.7154,
+      "transactions": 244
+    },
+    "outOfSample": {
+      "bars": 7863,
+      "start": "2025-02-07T09:00:00.000Z",
+      "end": "2025-12-31T23:00:00.000Z",
+      "netReturnPct": -21.479305,
+      "annualizedReturnPct": -23.615705,
+      "annualizedVolatilityPct": 29.078513,
+      "sharpe": -0.78078,
+      "maxDrawdownPct": 26.36005,
+      "exposurePct": 50.5787,
+      "transactions": 116
+    },
+    "all": {
+      "bars": 26207,
+      "start": "2023-01-05T00:00:00.000Z",
+      "end": "2025-12-31T23:00:00.000Z",
+      "netReturnPct": 111.316107,
+      "annualizedReturnPct": 28.414057,
+      "annualizedVolatilityPct": 33.977607,
+      "sharpe": 0.905868,
+      "maxDrawdownPct": 34.819135,
+      "exposurePct": 53.4743,
+      "transactions": 360
+    },
+    "benchmark": {
+      "inSample": {
+        "bars": 18344,
+        "start": "2023-01-05T00:00:00.000Z",
+        "end": "2025-02-07T08:00:00.000Z",
+        "netReturnPct": 474.05672,
+        "annualizedReturnPct": 130.372978,
+        "annualizedVolatilityPct": 48.336258,
+        "sharpe": 1.968311,
+        "maxDrawdownPct": 32.310677,
+        "exposurePct": 100,
+        "transactions": 2
+      },
+      "outOfSample": {
+        "bars": 7863,
+        "start": "2025-02-07T09:00:00.000Z",
+        "end": "2025-12-31T23:00:00.000Z",
+        "netReturnPct": -9.849529,
+        "annualizedReturnPct": -10.909619,
+        "annualizedVolatilityPct": 42.968107,
+        "sharpe": -0.053836,
+        "maxDrawdownPct": 34.761479,
+        "exposurePct": 100,
+        "transactions": 2
+      },
+      "all": {
+        "bars": 26207,
+        "start": "2023-01-05T00:00:00.000Z",
+        "end": "2025-12-31T23:00:00.000Z",
+        "netReturnPct": 419.070883,
+        "annualizedReturnPct": 73.409538,
+        "annualizedVolatilityPct": 46.792384,
+        "sharpe": 1.410524,
+        "maxDrawdownPct": 34.761479,
+        "exposurePct": 100,
+        "transactions": 2
+      }
+    }
+  },
+  "gate": {
+    "passedMechanicalGates": false,
+    "score": 10,
+    "failures": [
+      "non_positive_net_return",
+      "drawdown_limit_exceeded"
+    ],
+    "warning": "Mechanical score only. It is not evidence of future profit and does not replace independent reproduction or forward testing."
+  },
+  "requiredNextEvidence": [
+    "Independent reproduction by another DID using the same strategy and data hashes.",
+    "Forward paper trading on data unavailable when the strategy was proposed.",
+    "Human risk approval before any broker or exchange connection."
+  ],
+  "proposal": {
+    "file": "btc-sma-cross-v1-f43be63232.json",
+    "sha256": "60f9fc57cbcf3ac1acee07377965fbc2622eb29ce326854ba69b772efaed7c8e",
+    "strategyHash": "f43be632329b4faddbf3241531a16d077d7cf82f78590be55a6340b90878f547"
+  }
+}

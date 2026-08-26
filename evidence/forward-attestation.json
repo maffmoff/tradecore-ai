@@ -1,0 +1,14 @@
+{
+  "schema": "tradecore-attestation-v1",
+  "createdAt": "2026-08-26T11:29:40.270Z",
+  "did": "did:key:z6MkmDGEdnYdV8u6SF3pkLxyL1fnu2bKNn1KexNSpaJCRKn2",
+  "artifact": {
+    "schema": "tradecore-forward-plan-v1",
+    "sha256": "72df57d1d3411f612f5ee3048eb658dc2b5ebf2eadfc6c250dee158b099e792b"
+  },
+  "role": "forward-tester",
+  "verdict": "proposed",
+  "statement": "A 90-day paper test is locked for 2026-08-27 through 2026-11-25 UTC; no live orders.",
+  "canonical": "tradecore-attestation-v1|72df57d1d3411f612f5ee3048eb658dc2b5ebf2eadfc6c250dee158b099e792b|forward-tester|proposed|A 90-day paper test is locked for 2026-08-27 through 2026-11-25 UTC; no live orders.",
+  "signature": "tA_jpN3fUCAMqgztRyLnHMQgyKujDuCm55LwJh_6hf3knMI22439HNZ9iqQeZRnxAnMY4X9kWUmrVy7FO-wbAQ"
+}

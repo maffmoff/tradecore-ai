@@ -204,6 +204,19 @@ function calculateMetrics(records, periodsPerYear) {
   };
 }
 
+function calculateBuyAndHold(records, periodsPerYear, costRate) {
+  const benchmark = records.map((record, index) => {
+    const turnover = (index === 0 ? 1 : 0) + (index === records.length - 1 ? 1 : 0);
+    return {
+      timestamp: record.timestamp,
+      position: 1,
+      turnover,
+      netReturn: ((1 + record.marketReturn) * (1 - (turnover * costRate))) - 1,
+    };
+  });
+  return calculateMetrics(benchmark, periodsPerYear);
+}
+
 function scoreReport(outOfSample, evaluation) {
   const failures = [];
   if (outOfSample.bars < evaluation.minHoldoutBars) failures.push("insufficient_holdout_bars");
@@ -244,12 +257,14 @@ export function runBacktest(strategyInput, bars, { dataHash = null, dataLabel = 
       : (fast[signalIndex] > slow[signalIndex] ? 1 : 0);
     const turnover = Math.abs(desired - position);
     position = desired;
-    const grossReturn = finalBar ? 0 : position * ((bars[index + 1].open / bars[index].open) - 1);
+    const marketReturn = finalBar ? 0 : (bars[index + 1].open / bars[index].open) - 1;
+    const grossReturn = position * marketReturn;
     const netReturn = ((1 + grossReturn) * (1 - (turnover * costRate))) - 1;
     records.push({
       timestamp: bars[index].timestamp,
       position,
       turnover,
+      marketReturn,
       grossReturn,
       netReturn,
     });
@@ -268,13 +283,18 @@ export function runBacktest(strategyInput, bars, { dataHash = null, dataLabel = 
   const inSample = calculateMetrics(inSampleRecords, periodsPerYear);
   const outOfSample = calculateMetrics(outOfSampleRecords, periodsPerYear);
   const all = calculateMetrics(eligible, periodsPerYear);
+  const benchmark = {
+    inSample: calculateBuyAndHold(inSampleRecords, periodsPerYear, costRate),
+    outOfSample: calculateBuyAndHold(outOfSampleRecords, periodsPerYear, costRate),
+    all: calculateBuyAndHold(eligible, periodsPerYear, costRate),
+  };
 
   return {
     schema: "tradecore-backtest-v1",
     createdAt: new Date().toISOString(),
     engine: {
       name: "tradecore",
-      version: "0.1.0",
+      version: "0.2.0",
       timing: "Signal uses bar close; position changes at the next bar open. Final position is liquidated at the last open.",
     },
     strategy,
@@ -298,7 +318,7 @@ export function runBacktest(strategyInput, bars, { dataHash = null, dataLabel = 
       slippageBpsPerPositionChange: strategy.costs.slippageBps,
       dividendsFundingBorrowTaxes: "not modeled",
     },
-    metrics: { inSample, outOfSample, all },
+    metrics: { inSample, outOfSample, all, benchmark },
     gate: scoreReport(outOfSample, strategy.evaluation),
     requiredNextEvidence: [
       "Independent reproduction by another DID using the same strategy and data hashes.",

@@ -128,6 +128,13 @@ async function backtest(args) {
       throw new Error("Provenance market does not match the strategy market.");
     }
     report.data.provenance = provenance;
+    report.data.quality = {
+      status: provenance.received.unexpectedIntervalGaps === 0 ? "pass" : "review",
+      unexpectedIntervalGaps: provenance.received.unexpectedIntervalGaps,
+      note: provenance.received.unexpectedIntervalGaps === 0
+        ? "No interval gaps were detected."
+        : "The provider dataset contains interval gaps; review the disclosed timestamps before accepting the result.",
+    };
   }
   report.proposal = {
     file: basename(args.proposal),

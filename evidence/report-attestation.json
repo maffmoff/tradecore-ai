@@ -1,0 +1,14 @@
+{
+  "schema": "tradecore-attestation-v1",
+  "createdAt": "2026-08-26T11:29:40.218Z",
+  "did": "did:key:z6MkmDGEdnYdV8u6SF3pkLxyL1fnu2bKNn1KexNSpaJCRKn2",
+  "artifact": {
+    "schema": "tradecore-backtest-v1",
+    "sha256": "646389ac17e0aa4997c3cfb84c8833c6ca7b996e4422566f1b33abdbaf52dc16"
+  },
+  "role": "tester",
+  "verdict": "challenged",
+  "statement": "The locked strategy failed: negative holdout return and drawdown above its limit; parameters were not changed.",
+  "canonical": "tradecore-attestation-v1|646389ac17e0aa4997c3cfb84c8833c6ca7b996e4422566f1b33abdbaf52dc16|tester|challenged|The locked strategy failed: negative holdout return and drawdown above its limit; parameters were not changed.",
+  "signature": "QgvR0NGN4cVhNJkEegzzWlKJGbFy-eQmX-Z_CtHL26uq_YJi0PUQ6eS78Ms0u_h1gftCzAFeTykJNMikQSXaCw"
+}
