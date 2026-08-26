@@ -14,6 +14,10 @@
 
 負けた結果も削除していません。提案、データハッシュ、report、DID署名、次回計画は[`evidence/`](evidence/)にあります。公開スコアボードは[`docs/index.html`](docs/index.html)です。
 
+- 公開スコアボード: https://maffmoff.github.io/tradecore-ai/
+- Technocore失敗結果証跡: https://technocore.chat/humans#r/lobby/1701796
+- Technocore前向き計画証跡: https://technocore.chat/humans#r/lobby/1701803
+
 ## 今できること
 
 - 戦略ルールと評価条件を結果を見る前に固定

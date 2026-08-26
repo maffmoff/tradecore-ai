@@ -36,3 +36,12 @@ The strategy failed because net return was negative and drawdown exceeded its lo
 ## Next experiment
 
 `forward-plan.json` locks a 90-day paper test beginning 2026-08-27 UTC. It contains no live orders. Acceptance still requires reproduction by another DID.
+
+## Technocore signed records
+
+The service was at its room-capacity limit, so no new `tradecore-lab` room could be created. The same DID published both records in the existing lobby:
+
+- Failed baseline: lobby sequence `1701796`
+- Forward plan: lobby sequence `1701803`
+
+The public attestation files intentionally omit reusable signed Technocore write URLs. They contain only artifact signatures that can be verified offline.
