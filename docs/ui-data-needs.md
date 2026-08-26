@@ -16,6 +16,7 @@
   - `STAGE_CHANGED` — hypId, stage(sealed/verify/paper/review/live/rejected), note, signature。昇格梯子の正本
   - `BOUNTY_POSTED` / `FLOP_PAID` — 懸賞と支払い。payoutは did, reason(verification/adoption/bounty), refId, amountFlop
 - 読み出し口は「全件を先頭から」だけで足りる（静的生成のため）。ページングと差分取得（seq以降）があれば増分生成できる。
+- 注（2026-08-27・論文制度確定後）: 上のイベント語彙はプロトタイプ時点のもの。論文制度（§8）では `HYPOTHESIS_SEALED` は `PAPER_SEALED`（コードハッシュ・親論文引用・公開予定日を含む）に置き換わり、`FLOP_PAID` は `PAYOUT`（currency: USDC/FLOP・追記8）に一般化され、`SIGNALS_GENERATED`（日次実行）と公開スケジュール遷移（公開・延期・取り下げ）が加わる。
 
 ## 2. 署名の検証
 
@@ -50,7 +51,18 @@
 - FLOP残高・支払いの正本をどこに置くか（台帳イベントを正とするか、外部の残高台帳と照合するか）。FLOPは未発行のため当面は台帳記録のみ（「受領の権利を構成しない」文言必須）
 - 昇格審査（review段）のチェックリスト形式（前向き日数、独立再現件数、未解決反証ゼロ、リスク限度、規制確認）
 
-## 8. Technocore接続（方針決定済み・fable-concept.md追記7）
+## 8. 論文レジストリ（fable-concept.md追記24・25。提案であり実装しない）
 
-- 台帳イベント→Technocore投稿の写像: `HYPOTHESIS_SEALED`→`tradecore-proposal-v1`、`RESULT_PUBLISHED`→`tradecore-proof-v1`、反証の`EVALUATION_SIGNED`→`tradecore-challenge-v1`、ペーパー開始/終了の`STAGE_CHANGED`→`tradecore-forward-v1`。投稿内容はハッシュ＋正本URLのみ（Technocoreは非永続の証人であり正本ではない）。
+提出単位が「実行可能な論文」に確定したため、UIの中心データは論文の状態機械になる。必要な保持項目:
+
+- **論文レコード**: 封緘ハッシュ（コード＋主張＋検証条件）、著者DID、封緘日時、引用する親論文のハッシュ一覧（系譜）、対応ランタイム・エンジンバージョンのピン
+- **状態遷移**: 封緘 → 歴史検証 → ラウンド出場中 → 審査 → vault採用 → 公開済み → 書庫（棄却・取り下げも同格の終端状態として保持し、消さない）
+- **公開スケジュール**: 猶予期間の満了日、公開・延期・取り下げのイベント履歴。公開が報酬の条件（特許型）なので、UIは「公開までの残り日数」を論文ごとに表示できる必要がある
+- **再現記録（二等級）**: 等級1＝同一コード×同一データ再実行のハッシュ一致（自動・必須。実行者DIDと結果ハッシュ）、等級2＝独立再実装（別コードのハッシュ・実装者DID・判定）。論文ページは両等級の充足状況を別々に表示する
+- **ラウンド成績との接続**: 論文ID→日次`SIGNALS_GENERATED`→IC系列・MMC・分配履歴。live成績は論文の前向き証拠としてBT結果と並べて表示する
+- **引用グラフ**: 親子関係の一覧（将来の上流分配設計の材料。金銭化は未決・記録のみ先行）
+
+## 8b. Technocore接続（方針決定済み・fable-concept.md追記7）
+
+- 台帳イベント→Technocore投稿の写像: `PAPER_SEALED`→`tradecore-proposal-v1`、`RESULT_PUBLISHED`→`tradecore-proof-v1`、反証の`EVALUATION_SIGNED`→`tradecore-challenge-v1`、ペーパー開始/終了の`STAGE_CHANGED`→`tradecore-forward-v1`。投稿内容はハッシュ＋正本URLのみ（Technocoreは非永続の証人であり正本ではない）。
 - 公式告知部屋は署名必須の`mb-`部屋。UIは各イベントに対応するTechnocore投稿URL（時刻証明の傍証）を併記できるとよい。
