@@ -47,13 +47,25 @@ CSV列は次の順序でなくても構いませんが、名前が必要です�
 timestamp,open,high,low,close,volume
 ```
 
+公開Binance Spot APIから取得する場合、APIキーや口座接続は不要です。`--end`は含まない終了時刻です。
+
+```bash
+node bin/tradecore.mjs fetch-binance \
+  --symbol BTCUSDT \
+  --interval 1h \
+  --start 2023-01-01T00:00:00Z \
+  --end 2026-01-01T00:00:00Z \
+  --output data/btcusdt-1h-2023-2025.csv
+```
+
 ```bash
 node bin/tradecore.mjs propose \
   --strategy examples/btc-sma-cross.json
 
 node bin/tradecore.mjs backtest \
   --proposal artifacts/proposals/PROPOSAL.json \
-  --data /path/to/ohlcv.csv
+  --data /path/to/ohlcv.csv \
+  --provenance /path/to/ohlcv.csv.source.json
 ```
 
 エンジンはバー終値で信号を計算し、次のバー始値でポジションを変更します。最後の始値で強制決済し、ポジション変更ごとに指定コストを差し引きます。

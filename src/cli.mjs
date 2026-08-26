@@ -3,6 +3,7 @@ import { basename, resolve } from "node:path";
 import process from "node:process";
 import { backtestFromCsv, generateSyntheticCsv, validateStrategy } from "./backtest.mjs";
 import { buildDashboard } from "./dashboard.mjs";
+import { fetchBinanceKlines } from "./market-data.mjs";
 import {
   createAttestation,
   loadIdentity,
@@ -17,6 +18,7 @@ const HELP = `TradeCore — Proof of Useful Strategy
 Usage:
   tradecore propose --strategy FILE [--output FILE]
   tradecore demo-data [--output FILE] [--bars NUMBER]
+  tradecore fetch-binance --symbol SYMBOL --interval INTERVAL --start ISO --end ISO [--output FILE]
   tradecore backtest --proposal FILE --data CSV [--output FILE]
   tradecore attest --artifact FILE --identity PEM --role ROLE --verdict VERDICT --statement TEXT [options]
   tradecore verify --artifact FILE --attestation FILE
@@ -87,6 +89,30 @@ async function demoData(args) {
   return { message: "Synthetic fixture created. It is not real market data.", output, bars };
 }
 
+async function fetchBinance(args) {
+  for (const required of ["symbol", "interval", "start", "end"]) {
+    if (!args[required]) throw new Error(`fetch-binance requires --${required}.`);
+  }
+  const output = resolve(args.output ?? `data/${args.symbol.toLowerCase()}-${args.interval}.csv`);
+  const result = await fetchBinanceKlines({
+    symbol: args.symbol.toUpperCase(),
+    interval: args.interval,
+    start: args.start,
+    end: args.end,
+  });
+  await mkdir(resolve(output, ".."), { recursive: true });
+  await writeFile(output, result.csv, "utf8");
+  const provenanceOutput = `${output}.source.json`;
+  await writeJson(provenanceOutput, result.provenance);
+  return {
+    message: "Public Binance spot klines downloaded. No API key or trading account was used.",
+    output,
+    provenance: provenanceOutput,
+    bars: result.provenance.received.bars,
+    sha256: result.provenance.csvSha256,
+  };
+}
+
 async function backtest(args) {
   if (!args.proposal || !args.data) throw new Error("backtest requires --proposal FILE and --data CSV.");
   const proposal = await readJson(args.proposal);
@@ -94,6 +120,15 @@ async function backtest(args) {
   const strategy = validateStrategy(proposal.strategy);
   if (hashJson(strategy) !== proposal.strategyHash) throw new Error("Proposal strategy hash does not match its contents.");
   const report = await backtestFromCsv(strategy, args.data);
+  if (args.provenance) {
+    const provenance = await readJson(args.provenance);
+    if (provenance.schema !== "tradecore-market-data-v1") throw new Error("Unsupported provenance schema.");
+    if (provenance.csvSha256 !== report.data.sha256) throw new Error("Provenance CSV hash does not match the tested data.");
+    if (provenance.symbol !== strategy.market.symbol || provenance.interval !== strategy.market.interval) {
+      throw new Error("Provenance market does not match the strategy market.");
+    }
+    report.data.provenance = provenance;
+  }
   report.proposal = {
     file: basename(args.proposal),
     sha256: hashJson(proposal),
@@ -197,6 +232,7 @@ export async function runCli(argv) {
   const args = parseArgs(rest);
   if (command === "propose") return propose(args);
   if (command === "demo-data") return demoData(args);
+  if (command === "fetch-binance") return fetchBinance(args);
   if (command === "backtest") return backtest(args);
   if (command === "attest") return attest(args);
   if (command === "verify") return verify(args);
