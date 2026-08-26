@@ -1,6 +1,8 @@
+import { generateKeyPairSync } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import process from "node:process";
+import { runAgentOnce, watchAgent } from "./bt-agent.mjs";
 import { backtestFromCsv, generateSyntheticCsv, validateStrategy } from "./backtest.mjs";
 import { buildDashboard } from "./dashboard.mjs";
 import { fetchBinanceKlines } from "./market-data.mjs";
@@ -25,6 +27,8 @@ Usage:
   tradecore dashboard [--reports DIR] [--output FILE]
   tradecore publish --attestation FILE --confirm PUBLISH
   tradecore demo
+  tradecore keygen --output PEM
+  tradecore bt-agent --room ROOM --identity PEM [once]
 
 Attest options:
   --keychain-service SERVICE   Read the PEM passphrase from macOS Keychain.
@@ -218,6 +222,47 @@ async function publish(args) {
   return { message: "Signed proof published to Technocore.", output, status: result.status };
 }
 
+async function keygen(args) {
+  if (!args.output) throw new Error("keygen requires --output PEM.");
+  const passphrase = identityPassphrase(args);
+  if (!passphrase) throw new Error("Set TRADECORE_PASSPHRASE or use --keychain-service to encrypt the new key.");
+  const { privateKey } = generateKeyPairSync("ed25519");
+  const pem = privateKey.export({
+    format: "pem",
+    type: "pkcs8",
+    cipher: "aes-256-cbc",
+    passphrase,
+  });
+  const output = resolve(args.output);
+  await mkdir(resolve(output, ".."), { recursive: true });
+  await writeFile(output, pem, { encoding: "utf8", mode: 0o600 });
+  const identity = await loadIdentity(output, passphrase);
+  return {
+    message: "New Ed25519 identity created. Keep the PEM and passphrase out of git.",
+    output,
+    did: identity.did,
+  };
+}
+
+async function btAgent(args) {
+  if (!args.room) throw new Error("bt-agent requires --room ROOM.");
+  if (!args.identity) throw new Error("bt-agent requires --identity PEM.");
+  const identity = await loadIdentity(args.identity, identityPassphrase(args));
+  const options = {
+    room: args.room,
+    identity,
+    statePath: resolve(args.state ?? "artifacts/bt-agent/state.json"),
+    artifactsDir: resolve(args.artifacts ?? "artifacts/bt-agent"),
+    log: (line) => process.stderr.write(`${line}\n`),
+  };
+  if ("once" in args || args._.includes("once")) {
+    const result = await runAgentOnce(options);
+    return { message: "bt-agent single pass completed.", did: identity.did, ...result };
+  }
+  await watchAgent(options);
+  return { message: "bt-agent watch loop exited." };
+}
+
 async function demo() {
   const data = await demoData({ output: "data/btcusdt-1h-synthetic.csv", bars: "2400" });
   const proposal = await propose({ strategy: "examples/btc-sma-cross.json" });
@@ -245,6 +290,8 @@ export async function runCli(argv) {
   if (command === "verify") return verify(args);
   if (command === "dashboard") return dashboard(args);
   if (command === "publish") return publish(args);
+  if (command === "keygen") return keygen(args);
+  if (command === "bt-agent") return btAgent(args);
   if (command === "demo") return demo(args);
   throw new Error(`Unknown command: ${command}\n\n${HELP}`);
 }
