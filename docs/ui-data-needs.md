@@ -16,7 +16,7 @@
   - `STAGE_CHANGED` — hypId, stage(sealed/verify/paper/review/live/rejected), note, signature。昇格梯子の正本
   - `BOUNTY_POSTED` / `FLOP_PAID` — 懸賞と支払い。payoutは did, reason(verification/adoption/bounty), refId, amountFlop
 - 読み出し口は「全件を先頭から」だけで足りる（静的生成のため）。ページングと差分取得（seq以降）があれば増分生成できる。
-- 注（2026-08-27・論文制度確定後）: 上のイベント語彙はプロトタイプ時点のもの。論文制度（§8）では `HYPOTHESIS_SEALED` は `PAPER_SEALED`（コードハッシュ・親論文引用・公開予定日を含む）に置き換わり、`FLOP_PAID` は `PAYOUT`（currency: USDC/FLOP・追記8）に一般化され、`SIGNALS_GENERATED`（日次実行）と公開スケジュール遷移（公開・延期・取り下げ）が加わる。
+- 注（2026-08-27・論文制度確定後）: 上のイベント語彙はプロトタイプ時点のもの。論文制度（§8）では `HYPOTHESIS_SEALED` は `PAPER_SEALED`（コードハッシュ・親論文引用・公開予定日を含む）に置き換わり、`FLOP_PAID` は `PAYOUT`（currency: USDC/FLOP・fable-concept §5）に一般化され、`SIGNALS_GENERATED`（日次実行）と公開スケジュール遷移（公開・延期・取り下げ）が加わる。
 
 ## 2. 署名の検証
 
@@ -26,7 +26,7 @@
 ## 3. 公式runとの接続
 
 - `RESULT_PUBLISHED.runRef` は公式バックテストの成果物（report JSON）への参照。正本のURLとハッシュがあれば、UIは数値を再掲せず正本から生成できる。
-- 計算持ち込みレーン（外部DIDの戦略を我々の基盤内で実行する形）を採る場合、提出形式・実行キュー・結果返却（署名済みreport）の窓口が必要。実行枠はDIDごとのレート制限（1日N run）で管理する（TCREDは廃止済み・fable-concept.md追記7）。
+- 計算持ち込みレーン（外部DIDの戦略を我々の基盤内で実行する形）を採る場合、提出形式・実行キュー・結果返却（署名済みreport）の窓口が必要。実行枠はDIDごとのレート制限（1日N run）で管理する（TCREDは廃止済み・fable-concept §5）。
 
 ## 4. ペーパー運用の日次記録
 
@@ -51,7 +51,7 @@
 - FLOP残高・支払いの正本をどこに置くか（台帳イベントを正とするか、外部の残高台帳と照合するか）。FLOPは未発行のため当面は台帳記録のみ（「受領の権利を構成しない」文言必須）
 - 昇格審査（review段）のチェックリスト形式（前向き日数、独立再現件数、未解決反証ゼロ、リスク限度、規制確認）
 
-## 8. 論文レジストリ（fable-concept.md追記24・25。提案であり実装しない）
+## 8. 論文レジストリ（fable-concept §2。提案であり実装しない）
 
 提出単位が「実行可能な論文」に確定したため、UIの中心データは論文の状態機械になる。必要な保持項目:
 
@@ -62,7 +62,7 @@
 - **ラウンド成績との接続**: 論文ID→日次`SIGNALS_GENERATED`→IC系列・MMC・分配履歴。live成績は論文の前向き証拠としてBT結果と並べて表示する
 - **引用グラフ**: 親子関係の一覧（将来の上流分配設計の材料。金銭化は未決・記録のみ先行）
 
-## 8b. Technocore接続（方針決定済み・fable-concept.md追記7）
+## 8b. Technocore接続（方針決定済み・fable-concept §6）
 
 - 台帳イベント→Technocore投稿の写像: `PAPER_SEALED`→`tradecore-proposal-v1`、`RESULT_PUBLISHED`→`tradecore-proof-v1`、反証の`EVALUATION_SIGNED`→`tradecore-challenge-v1`、ペーパー開始/終了の`STAGE_CHANGED`→`tradecore-forward-v1`。投稿内容はハッシュ＋正本URLのみ（Technocoreは非永続の証人であり正本ではない）。
 - 公式告知部屋は署名必須の`mb-`部屋。UIは各イベントに対応するTechnocore投稿URL（時刻証明の傍証）を併記できるとよい。
