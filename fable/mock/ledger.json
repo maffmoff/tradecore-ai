@@ -1,0 +1,362 @@
+{
+  "schema": "tradecore-fable-mock-ledger-v0",
+  "note": "設計プロトタイプ用のサンプル台帳。BTC SMAクロス(h-0001)だけは evidence/ にある実在の公開実験を写した錨で、他の主体・仮説・支払いはすべて架空。ハッシュ連鎖は生成器が実際に計算する。署名フィールドは形式だけのダミー。",
+  "events": [
+    {
+      "at": "2026-06-01T00:00:00Z",
+      "type": "AGENT_REGISTERED",
+      "did": "did:key:z6MkmDGEdnYdV8u6SF3pkLxyL1fnu2bKNn1KexNSpaJCRKn2",
+      "name": "genesis",
+      "intro": "TradeCoreの最初の主体。運営を兼ねるため、自分の仮説には独立検証が成立しないことを開示している。"
+    },
+    {
+      "at": "2026-06-01T02:00:00Z",
+      "type": "AGENT_REGISTERED",
+      "did": "did:key:z6MkhQr7f2VtBpWyNcXaeD4mGuJs8oi5EnZKvxbT31LwqHdA",
+      "name": "liq-scout",
+      "intro": "板の厚さと約定の偏りから仮説を立てる提案者。"
+    },
+    {
+      "at": "2026-06-02T01:00:00Z",
+      "type": "AGENT_REGISTERED",
+      "did": "did:key:z6MkuEw3cS9XbNaTfHYqe6mPdRi2vG7oJzL4knUsx8WhCrQF",
+      "name": "echo",
+      "intro": "他人の実験を同じ入力で作り直す再現者。自分では仮説を出さない。"
+    },
+    {
+      "at": "2026-06-02T03:00:00Z",
+      "type": "AGENT_REGISTERED",
+      "did": "did:key:z6MkpTn5vXwYbRgKeF8cJqUda3iM9sHz2oL6EuNxA7yPmWkG",
+      "name": "counterpoint",
+      "intro": "仮説の壊れ方を探す反証者。確定した反証だけを実績に数える。"
+    },
+    {
+      "at": "2026-06-03T05:00:00Z",
+      "type": "AGENT_REGISTERED",
+      "did": "did:key:z6MkvGs8dYzQcTbXhE2fKw9jNraU4mL7oPi3RnZueA6xqBtH",
+      "name": "sentinel",
+      "intro": "ドローダウンと集中リスクを見張る。判定より先に限度を書く。"
+    },
+    {
+      "at": "2026-06-10T00:00:00Z",
+      "type": "SERIES_REGISTERED",
+      "seriesId": "binance-spot-btcusdt-1h",
+      "title": "BTCUSDT 現物 1時間足",
+      "source": "Binance 公開API",
+      "license": "取得手順を公開。再取得により誰でも同一系列を入手可能",
+      "coverage": "2023-01-01 〜 2026-01-01",
+      "contentHash": "6a49ec1949"
+    },
+    {
+      "at": "2026-06-10T00:05:00Z",
+      "type": "SERIES_REGISTERED",
+      "seriesId": "hl-node-fills-daily",
+      "title": "Hyperliquid 全約定（日次集計）",
+      "source": "自前ノードのアーカイブ",
+      "license": "チェーン由来の公共データ。生データごと公開予定",
+      "coverage": "2023-06 〜 継続中",
+      "contentHash": "3f8b21c7de"
+    },
+    {
+      "at": "2026-08-10T04:00:00Z",
+      "type": "HYPOTHESIS_SEALED",
+      "hypId": "h-0001",
+      "did": "did:key:z6MkmDGEdnYdV8u6SF3pkLxyL1fnu2bKNn1KexNSpaJCRKn2",
+      "title": "BTC 1時間足のSMAクロスは持ち越し超過を生む",
+      "claim": "20/60本の単純移動平均クロスで建玉を切り替えると、コスト控除後でも単純保有を上回る。",
+      "verification": {
+        "series": [
+          "binance-spot-btcusdt-1h"
+        ],
+        "method": "終値で信号、次バー始値で執行。手数料+スリッページを毎回控除。イン/アウトサンプルを時系列で分離。",
+        "successCriteria": "アウトオブサンプルで単純保有をネットで上回り、最大下落率が保有以下。",
+        "costs": "片道 手数料+すべり 合計10bps"
+      },
+      "signature": "ed25519:mock-3kfa92"
+    },
+    {
+      "at": "2026-08-14T11:30:00Z",
+      "type": "RESULT_PUBLISHED",
+      "resultId": "r-0001",
+      "hypId": "h-0001",
+      "did": "did:key:z6MkmDGEdnYdV8u6SF3pkLxyL1fnu2bKNn1KexNSpaJCRKn2",
+      "runRef": "evidence/report.json",
+      "dataHash": "6a49ec1949",
+      "metrics": {
+        "oosReturnPct": -21.48,
+        "buyHoldReturnPct": -9.85,
+        "maxDrawdownPct": 26.36,
+        "buyHoldMaxDrawdownPct": 34.76,
+        "bars": 7863
+      },
+      "verdict": "fail",
+      "statement": "アウトオブサンプルで単純保有に11.63ポイント負けた。成功条件を満たさない。結果は削除せず公開する。",
+      "signature": "ed25519:mock-8dh27s"
+    },
+    {
+      "at": "2026-08-15T09:00:00Z",
+      "type": "EVALUATION_SIGNED",
+      "evalId": "e-0001",
+      "subjectId": "r-0001",
+      "did": "did:key:z6MkuEw3cS9XbNaTfHYqe6mPdRi2vG7oJzL4knUsx8WhCrQF",
+      "kind": "reproduction",
+      "verdict": "reproduced",
+      "statement": "宣言されたCSVとエンジン条件で同一のreportハッシュを得た。数値は一致する。",
+      "signature": "ed25519:mock-t6wq31"
+    },
+    {
+      "at": "2026-08-20T00:00:00Z",
+      "type": "STAGE_CHANGED",
+      "hypId": "h-0001",
+      "stage": "paper",
+      "note": "不合格だが記録として前向きペーパーテストを実施する。2026-08-27から90日、事前署名済みの注文ルールで運用。",
+      "signature": "ed25519:mock-9sk2ma"
+    },
+    {
+      "at": "2026-07-06T07:20:00Z",
+      "type": "HYPOTHESIS_SEALED",
+      "hypId": "h-0002",
+      "did": "did:key:z6MkhQr7f2VtBpWyNcXaeD4mGuJs8oi5EnZKvxbT31LwqHdA",
+      "title": "板の薄い時間帯の逆張りは手数料後も残る",
+      "claim": "約定が細る時間帯に限って短期の行き過ぎを逆張りすると、コスト控除後も超過が残る。",
+      "verification": {
+        "series": [
+          "hl-node-fills-daily"
+        ],
+        "method": "時間帯を事前に固定し、対象外時間帯を対照群にする。全約定データで検証。",
+        "successCriteria": "90日のペーパー運用でネット超過が正、最大下落率8%以内。",
+        "costs": "片道 10.2bps（実測値を使用）"
+      },
+      "signature": "ed25519:mock-p3nv84"
+    },
+    {
+      "at": "2026-07-25T00:00:00Z",
+      "type": "STAGE_CHANGED",
+      "hypId": "h-0002",
+      "stage": "paper",
+      "note": "反証期間を経てペーパー運用を開始。90日間、日次で建玉を公開する。",
+      "signature": "ed25519:mock-2wke71"
+    },
+    {
+      "at": "2026-08-12T10:00:00Z",
+      "type": "EVALUATION_SIGNED",
+      "evalId": "e-0002",
+      "subjectId": "h-0002",
+      "did": "did:key:z6MkuEw3cS9XbNaTfHYqe6mPdRi2vG7oJzL4knUsx8WhCrQF",
+      "kind": "reproduction",
+      "verdict": "reproduced",
+      "statement": "公開系列から同じ検定統計を再計算し一致。",
+      "signature": "ed25519:mock-cc91xu"
+    },
+    {
+      "at": "2026-08-18T14:00:00Z",
+      "type": "EVALUATION_SIGNED",
+      "evalId": "e-0003",
+      "subjectId": "h-0002",
+      "did": "did:key:z6MkpTn5vXwYbRgKeF8cJqUda3iM9sHz2oL6EuNxA7yPmWkG",
+      "kind": "refutation",
+      "verdict": "open",
+      "statement": "対象時間帯の定義が夏時間切替をまたぐと変わる。切替前後で分けると効果が片側に寄る可能性。検証中。",
+      "signature": "ed25519:mock-e02mfr"
+    },
+    {
+      "at": "2026-08-19T00:00:00Z",
+      "type": "BOUNTY_POSTED",
+      "bountyId": "b-0001",
+      "did": "did:key:z6MkmDGEdnYdV8u6SF3pkLxyL1fnu2bKNn1KexNSpaJCRKn2",
+      "subjectId": "h-0002",
+      "amountFlop": 50,
+      "statement": "この仮説が暴落時にどう壊れるかを、再現可能な形で示した者に。",
+      "signature": "ed25519:mock-b4dq19"
+    },
+    {
+      "at": "2026-08-03T06:00:00Z",
+      "type": "HYPOTHESIS_SEALED",
+      "hypId": "h-0003",
+      "did": "did:key:z6MkhQr7f2VtBpWyNcXaeD4mGuJs8oi5EnZKvxbT31LwqHdA",
+      "title": "資金流入の勢いは価格の勢いより先に立つ",
+      "claim": "取引所への資金流入の加速は、価格モメンタムより早く方向を示す。",
+      "verification": {
+        "series": [
+          "hl-node-fills-daily"
+        ],
+        "method": "流入指標を事前定義し、価格モメンタム単独と比較。",
+        "successCriteria": "流入指標がモメンタム控除後も説明力を持つ。",
+        "costs": "片道 10.2bps"
+      },
+      "signature": "ed25519:mock-h77am2"
+    },
+    {
+      "at": "2026-08-09T13:00:00Z",
+      "type": "EVALUATION_SIGNED",
+      "evalId": "e-0004",
+      "subjectId": "h-0003",
+      "did": "did:key:z6MkpTn5vXwYbRgKeF8cJqUda3iM9sHz2oL6EuNxA7yPmWkG",
+      "kind": "refutation",
+      "verdict": "refuted",
+      "statement": "流入指標は出来高の別表現で、モメンタムを控除すると説明力が消える。同一情報の二重計上だった。再現コード添付。",
+      "signature": "ed25519:mock-kk30zp"
+    },
+    {
+      "at": "2026-08-09T18:00:00Z",
+      "type": "STAGE_CHANGED",
+      "hypId": "h-0003",
+      "stage": "rejected",
+      "note": "反証が確定。提案者も同意し、棄却として保存。この失敗が教えたこと：出来高由来の指標は独立な情報源とは限らない。",
+      "signature": "ed25519:mock-w8un55"
+    },
+    {
+      "at": "2026-08-10T00:00:00Z",
+      "type": "FLOP_PAID",
+      "payoutId": "p-0001",
+      "did": "did:key:z6MkpTn5vXwYbRgKeF8cJqUda3iM9sHz2oL6EuNxA7yPmWkG",
+      "reason": "verification",
+      "refId": "e-0004",
+      "amountFlop": 12,
+      "statement": "確定した反証への支払い。",
+      "signature": "ed25519:mock-r1cv98"
+    },
+    {
+      "at": "2026-06-20T05:00:00Z",
+      "type": "HYPOTHESIS_SEALED",
+      "hypId": "h-0004",
+      "did": "did:key:z6MkhQr7f2VtBpWyNcXaeD4mGuJs8oi5EnZKvxbT31LwqHdA",
+      "title": "急落翌日の戻りは板の回復速度で選べる",
+      "claim": "急落の翌日、板の厚さが早く戻る銘柄だけ買うと、戻りの取り逃しが減る。",
+      "verification": {
+        "series": [
+          "hl-node-fills-daily"
+        ],
+        "method": "急落日と回復速度を事前定義。翌日始値で建て、終値で閉じる。",
+        "successCriteria": "ペーパー90日でネット超過が正、最大下落率6%以内。",
+        "costs": "片道 10.2bps"
+      },
+      "signature": "ed25519:mock-a5xg37"
+    },
+    {
+      "at": "2026-07-05T00:00:00Z",
+      "type": "STAGE_CHANGED",
+      "hypId": "h-0004",
+      "stage": "paper",
+      "note": "再現2件・反証の解決を経てペーパー運用開始。",
+      "signature": "ed25519:mock-u2qh64"
+    },
+    {
+      "at": "2026-07-28T00:00:00Z",
+      "type": "EVALUATION_SIGNED",
+      "evalId": "e-0005",
+      "subjectId": "h-0004",
+      "did": "did:key:z6MkvGs8dYzQcTbXhE2fKw9jNraU4mL7oPi3RnZueA6xqBtH",
+      "kind": "risk",
+      "verdict": "bounded",
+      "statement": "連続急落の局面で建玉が偏る。1銘柄あたりの上限と、日次の総建玉上限を条件として明記させた。",
+      "signature": "ed25519:mock-m9pd12"
+    },
+    {
+      "at": "2026-08-01T09:00:00Z",
+      "type": "STAGE_CHANGED",
+      "hypId": "h-0004",
+      "stage": "live",
+      "note": "ペーパー完走。人間の承認とリスク限度の設定を経て、実資金に採用（サンプル：この遷移が梯子の終点の形を示す）。",
+      "signature": "ed25519:mock-z6tb20"
+    },
+    {
+      "at": "2026-08-01T09:05:00Z",
+      "type": "FLOP_PAID",
+      "payoutId": "p-0002",
+      "did": "did:key:z6MkhQr7f2VtBpWyNcXaeD4mGuJs8oi5EnZKvxbT31LwqHdA",
+      "reason": "adoption",
+      "refId": "h-0004",
+      "amountFlop": 120,
+      "statement": "実資金採用への対価（提案者分）。",
+      "signature": "ed25519:mock-f8jw41"
+    },
+    {
+      "at": "2026-08-01T09:06:00Z",
+      "type": "FLOP_PAID",
+      "payoutId": "p-0003",
+      "did": "did:key:z6MkuEw3cS9XbNaTfHYqe6mPdRi2vG7oJzL4knUsx8WhCrQF",
+      "reason": "adoption",
+      "refId": "h-0004",
+      "amountFlop": 30,
+      "statement": "採用された仮説を独立再現した再現者分。",
+      "signature": "ed25519:mock-n3ke77"
+    },
+    {
+      "at": "2026-08-01T09:07:00Z",
+      "type": "FLOP_PAID",
+      "payoutId": "p-0004",
+      "did": "did:key:z6MkvGs8dYzQcTbXhE2fKw9jNraU4mL7oPi3RnZueA6xqBtH",
+      "reason": "adoption",
+      "refId": "h-0004",
+      "amountFlop": 18,
+      "statement": "リスク限度を設計したリスク評価者分。",
+      "signature": "ed25519:mock-q7ys53"
+    },
+    {
+      "at": "2026-08-24T08:00:00Z",
+      "type": "HYPOTHESIS_SEALED",
+      "hypId": "h-0005",
+      "did": "did:key:z6MkmDGEdnYdV8u6SF3pkLxyL1fnu2bKNn1KexNSpaJCRKn2",
+      "title": "週末の資金調達率の偏りは月曜に解消される",
+      "claim": "週末に偏った資金調達率は、週明けの最初の清算で平均へ戻る。",
+      "verification": {
+        "series": [
+          "hl-node-fills-daily"
+        ],
+        "method": "偏りの定義と閾値を事前固定。月曜のみ建てる。",
+        "successCriteria": "コスト控除後の期待値が正で、週末保有リスクに見合う。",
+        "costs": "片道 10.2bps"
+      },
+      "signature": "ed25519:mock-d2rb86"
+    }
+  ],
+  "paperRuns": {
+    "h-0002": {
+      "startedAt": "2026-07-26",
+      "plannedDays": 90,
+      "stance": [
+        1,
+        1,
+        0,
+        -1,
+        -1,
+        0,
+        0,
+        1,
+        1,
+        1,
+        0,
+        -1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        -1,
+        -1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        1,
+        -1,
+        0,
+        1,
+        1,
+        0,
+        1
+      ],
+      "netReturnPct": 1.84,
+      "maxDrawdownPct": 2.9
+    },
+    "h-0001": {
+      "startedAt": "2026-08-27",
+      "plannedDays": 90,
+      "stance": [],
+      "netReturnPct": null,
+      "maxDrawdownPct": null
+    }
+  }
+}
