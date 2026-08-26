@@ -1,0 +1,215 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { basename, resolve } from "node:path";
+import process from "node:process";
+import { backtestFromCsv, generateSyntheticCsv, validateStrategy } from "./backtest.mjs";
+import { buildDashboard } from "./dashboard.mjs";
+import {
+  createAttestation,
+  loadIdentity,
+  passphraseFromKeychain,
+  publishTechnocoreAttestation,
+  verifyAttestation,
+} from "./did.mjs";
+import { hashJson, readJson, writeJson } from "./core.mjs";
+
+const HELP = `TradeCore — Proof of Useful Strategy
+
+Usage:
+  tradecore propose --strategy FILE [--output FILE]
+  tradecore demo-data [--output FILE] [--bars NUMBER]
+  tradecore backtest --proposal FILE --data CSV [--output FILE]
+  tradecore attest --artifact FILE --identity PEM --role ROLE --verdict VERDICT --statement TEXT [options]
+  tradecore verify --artifact FILE --attestation FILE
+  tradecore dashboard [--reports DIR] [--output FILE]
+  tradecore publish --attestation FILE --confirm PUBLISH
+  tradecore demo
+
+Attest options:
+  --keychain-service SERVICE   Read the PEM passphrase from macOS Keychain.
+  --keychain-account ACCOUNT   Optional Keychain account selector.
+  --technocore-room ROOM       Add a signed Technocore write preview; does not publish.
+  --artifact-url URL           Public durable URL to include in the preview.
+  --output FILE                Attestation output path.
+
+Passphrase fallback:
+  If --keychain-service is omitted, set TRADECORE_PASSPHRASE in the environment.
+
+Safety:
+  Backtests and the dashboard are research artifacts, not trading instructions.
+  Technocore is written only by the publish command with --confirm PUBLISH.
+`;
+
+function parseArgs(argv) {
+  const result = { _: [] };
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (!argument.startsWith("--")) {
+      result._.push(argument);
+      continue;
+    }
+    const key = argument.slice(2);
+    const value = argv[index + 1];
+    if (value === undefined || value.startsWith("--")) throw new Error(`Missing value for --${key}.`);
+    result[key] = value;
+    index += 1;
+  }
+  return result;
+}
+
+function defaultOutput(prefix, id, hash) {
+  return resolve("artifacts", prefix, `${id}-${hash.slice(0, 10)}.json`);
+}
+
+async function propose(args) {
+  if (!args.strategy) throw new Error("propose requires --strategy FILE.");
+  const strategy = validateStrategy(await readJson(args.strategy));
+  const strategyHash = hashJson(strategy);
+  const proposal = {
+    schema: "tradecore-proposal-v1",
+    createdAt: new Date().toISOString(),
+    strategy,
+    strategyHash,
+    lock: {
+      rule: "The strategy and evaluation settings above must not change after results are observed.",
+      nextStep: "Publish or DID-attest this hash before the holdout or forward-test outcome is known.",
+    },
+  };
+  const output = resolve(args.output ?? defaultOutput("proposals", strategy.id, strategyHash));
+  await writeJson(output, proposal);
+  return { message: "Strategy proposal locked.", output, strategyHash };
+}
+
+async function demoData(args) {
+  const output = resolve(args.output ?? "data/btcusdt-1h-synthetic.csv");
+  const bars = args.bars ? Number(args.bars) : 1200;
+  await mkdir(resolve(output, ".."), { recursive: true });
+  await writeFile(output, generateSyntheticCsv({ bars }), "utf8");
+  return { message: "Synthetic fixture created. It is not real market data.", output, bars };
+}
+
+async function backtest(args) {
+  if (!args.proposal || !args.data) throw new Error("backtest requires --proposal FILE and --data CSV.");
+  const proposal = await readJson(args.proposal);
+  if (proposal.schema !== "tradecore-proposal-v1") throw new Error("Expected a tradecore-proposal-v1 artifact.");
+  const strategy = validateStrategy(proposal.strategy);
+  if (hashJson(strategy) !== proposal.strategyHash) throw new Error("Proposal strategy hash does not match its contents.");
+  const report = await backtestFromCsv(strategy, args.data);
+  report.proposal = {
+    file: basename(args.proposal),
+    sha256: hashJson(proposal),
+    strategyHash: proposal.strategyHash,
+  };
+  const output = resolve(args.output ?? defaultOutput("reports", strategy.id, report.data.sha256));
+  await writeJson(output, report);
+  return {
+    message: "Backtest completed. Mechanical gates are not an investment recommendation.",
+    output,
+    passedMechanicalGates: report.gate.passedMechanicalGates,
+    score: report.gate.score,
+    outOfSample: report.metrics.outOfSample,
+  };
+}
+
+function identityPassphrase(args) {
+  if (args["keychain-service"]) {
+    return passphraseFromKeychain(args["keychain-service"], args["keychain-account"]);
+  }
+  return process.env.TRADECORE_PASSPHRASE;
+}
+
+async function attest(args) {
+  for (const required of ["artifact", "identity", "role", "verdict", "statement"]) {
+    if (!args[required]) throw new Error(`attest requires --${required}.`);
+  }
+  const artifact = await readJson(args.artifact);
+  const identity = await loadIdentity(args.identity, identityPassphrase(args));
+  const attestation = createAttestation(artifact, {
+    privateKey: identity.privateKey,
+    role: args.role,
+    verdict: args.verdict,
+    statement: args.statement,
+    technocoreRoom: args["technocore-room"],
+    artifactUrl: args["artifact-url"],
+  });
+  const output = resolve(args.output ?? defaultOutput("attestations", basename(args.artifact, ".json"), attestation.artifact.sha256));
+  await writeJson(output, attestation);
+  return {
+    message: attestation.technocore
+      ? "Attestation signed; Technocore write is preview-only and has not been published."
+      : "Attestation signed locally.",
+    output,
+    did: attestation.did,
+    artifactHash: attestation.artifact.sha256,
+    technocorePreview: attestation.technocore?.message ?? null,
+  };
+}
+
+async function verify(args) {
+  if (!args.artifact || !args.attestation) throw new Error("verify requires --artifact FILE and --attestation FILE.");
+  const result = verifyAttestation(await readJson(args.attestation), await readJson(args.artifact));
+  if (!result.valid) process.exitCode = 1;
+  return { message: result.valid ? "Attestation is valid." : "Attestation is INVALID.", ...result };
+}
+
+async function dashboard(args) {
+  const reports = resolve(args.reports ?? "artifacts/reports");
+  const output = resolve(args.output ?? "site/index.html");
+  const result = await buildDashboard(reports, output);
+  return { message: "Static research dashboard built.", ...result };
+}
+
+async function publish(args) {
+  if (!args.attestation) throw new Error("publish requires --attestation FILE.");
+  if (args.confirm !== "PUBLISH") throw new Error("Publishing requires the exact flag --confirm PUBLISH.");
+  const attestation = await readJson(args.attestation);
+  const result = await publishTechnocoreAttestation(attestation);
+  const receipt = {
+    schema: "tradecore-technocore-receipt-v1",
+    publishedAt: new Date().toISOString(),
+    did: attestation.did,
+    artifact: attestation.artifact,
+    technocore: attestation.technocore,
+    response: result,
+  };
+  const output = resolve(args.output ?? defaultOutput("receipts", "technocore", attestation.artifact.sha256));
+  await writeJson(output, receipt);
+  return { message: "Signed proof published to Technocore.", output, status: result.status };
+}
+
+async function demo() {
+  const data = await demoData({ output: "data/btcusdt-1h-synthetic.csv", bars: "2400" });
+  const proposal = await propose({ strategy: "examples/btc-sma-cross.json" });
+  const report = await backtest({ proposal: proposal.output, data: data.output });
+  const site = await dashboard({});
+  return {
+    message: "Local paper-research demo completed. Synthetic results have no market significance.",
+    proposal: proposal.output,
+    report: report.output,
+    dashboard: site.outputPath,
+  };
+}
+
+export async function runCli(argv) {
+  const [command, ...rest] = argv;
+  if (!command || command === "help" || command === "--help" || command === "-h") {
+    return { raw: HELP };
+  }
+  const args = parseArgs(rest);
+  if (command === "propose") return propose(args);
+  if (command === "demo-data") return demoData(args);
+  if (command === "backtest") return backtest(args);
+  if (command === "attest") return attest(args);
+  if (command === "verify") return verify(args);
+  if (command === "dashboard") return dashboard(args);
+  if (command === "publish") return publish(args);
+  if (command === "demo") return demo(args);
+  throw new Error(`Unknown command: ${command}\n\n${HELP}`);
+}
+
+export function printResult(result) {
+  if (result.raw) {
+    process.stdout.write(result.raw);
+    return;
+  }
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+}
