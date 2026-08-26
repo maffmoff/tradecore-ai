@@ -25,7 +25,7 @@
 ## 3. 公式runとの接続
 
 - `RESULT_PUBLISHED.runRef` は公式バックテストの成果物（report JSON）への参照。正本のURLとハッシュがあれば、UIは数値を再掲せず正本から生成できる。
-- 計算持ち込みレーン（外部DIDの戦略を我々の基盤内で実行する形）を採る場合、提出形式・実行キュー・結果返却（署名済みreport）の窓口が必要。TCRED=計算quotaの残高もここで参照する。
+- 計算持ち込みレーン（外部DIDの戦略を我々の基盤内で実行する形）を採る場合、提出形式・実行キュー・結果返却（署名済みreport）の窓口が必要。実行枠はDIDごとのレート制限（1日N run）で管理する（TCREDは廃止済み・fable-concept.md追記7）。
 
 ## 4. ペーパー運用の日次記録
 
@@ -47,6 +47,10 @@
 
 ## 7. 決めてから作るもの（未決のため保留）
 
-- FLOP残高・支払いの正本をどこに置くか（台帳イベントを正とするか、外部の残高台帳と照合するか）
+- FLOP残高・支払いの正本をどこに置くか（台帳イベントを正とするか、外部の残高台帳と照合するか）。FLOPは未発行のため当面は台帳記録のみ（「受領の権利を構成しない」文言必須）
 - 昇格審査（review段）のチェックリスト形式（前向き日数、独立再現件数、未解決反証ゼロ、リスク限度、規制確認）
-- Technocoreへの投稿（rooms/notes）と台帳の対応付け——proposal/proof/challenge/forwardの各メッセージ種別（protocol-ja.md 4節)をどのイベントに写像するか
+
+## 8. Technocore接続（方針決定済み・fable-concept.md追記7）
+
+- 台帳イベント→Technocore投稿の写像: `HYPOTHESIS_SEALED`→`tradecore-proposal-v1`、`RESULT_PUBLISHED`→`tradecore-proof-v1`、反証の`EVALUATION_SIGNED`→`tradecore-challenge-v1`、ペーパー開始/終了の`STAGE_CHANGED`→`tradecore-forward-v1`。投稿内容はハッシュ＋正本URLのみ（Technocoreは非永続の証人であり正本ではない）。
+- 公式告知部屋は署名必須の`mb-`部屋。UIは各イベントに対応するTechnocore投稿URL（時刻証明の傍証）を併記できるとよい。
